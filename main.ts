@@ -95,7 +95,7 @@ const cursorTooltipBaseTheme = EditorView.baseTheme({
     "& .cm-tooltip-arrow:after": {
       borderTopColor: "transparent"
     },
-	"z-index": 300,
+	"z-index": 300, // does not work 😓
   }
 })
 
@@ -127,13 +127,13 @@ class CursorEventHandlers{
 		let self = this;
 		return StateField.define<readonly Tooltip[]>({
 			create: emptyTooltip,
-		  
+
 			update(tooltips, tr) {
 				if (!self.d_pressed || !self.alt_pressed) 
 					return emptyTooltip(tr.state)
 				return getCursorTooltips(tr.state)
 			},
-		  
+			
 			provide: f => showTooltip.computeN([f], state => state.field(f))
 			
 		  })
