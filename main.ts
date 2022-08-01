@@ -1,4 +1,5 @@
-import { App, Editor, MarkdownView, Modal, Notice, Plugin, PluginSettingTab, Setting } from 'obsidian';
+import { App, Modal, Plugin, PluginSettingTab, Setting, MarkdownView } from 'obsidian';
+import { DummySuggest } from 'src/MyEditorSuggest'
 
 // Remember to rename these classes and interfaces!
 
@@ -28,8 +29,123 @@ function dummyInput() {
 }
 ////////////////
 
+import {Tooltip, showTooltip, tooltips} from "@codemirror/view"
+import {StateField, Extension} from "@codemirror/state"
+
+const cursorTooltipField = StateField.define<readonly Tooltip[]>({
+  create: emptyTooltip,
+
+  update(tooltips, tr) {
+    if (!tr.docChanged && !tr.selection) return tooltips
+    return getCursorTooltips(tr.state)
+  },
+
+  provide: f => showTooltip.computeN([f], state => state.field(f))
+  
+})
+
+import {EditorState} from "@codemirror/state"
+
+function emptyTooltip(state: EditorState): readonly Tooltip[] {
+	return [{
+			pos: 0,
+			create: () => {
+				let dom = document.createElement("div")
+				return { dom: dom,
+						offset: {x: -500, y: 0} }
+			}
+		}
+	]
+}
+
+function getCursorTooltips(state: EditorState): readonly Tooltip[] {
+  return state.selection.ranges
+    .filter(range => range.empty)
+    .map(range => {
+      let line = state.doc.lineAt(range.head)
+      let text = line.number + ":" + (range.head - line.from)
+      return {
+        pos: range.head,
+        above: true,
+        strictSide: false,
+        arrow: true,
+        create: () => {
+          let dom = document.createElement("div")
+          dom.className = "cm-tooltip-cursor"
+          dom.textContent = text
+          return {
+			dom: dom,
+			//offset: {x: -329, y: 25},
+		  }
+        }
+      }
+    })
+}
+
+const cursorTooltipBaseTheme = EditorView.baseTheme({
+  ".cm-tooltip.cm-tooltip-cursor": {
+    backgroundColor: "#66b",
+    color: "white",
+    border: "none",
+    padding: "2px 7px",
+    borderRadius: "4px",
+    "& .cm-tooltip-arrow:before": {
+      borderTopColor: "#66b"
+    },
+    "& .cm-tooltip-arrow:after": {
+      borderTopColor: "transparent"
+    },
+	"z-index": 300,
+  }
+})
+
+class CursorEventHandlers{
+	alt_pressed: boolean;
+	d_pressed: boolean;
+
+	constructor() {
+		this.alt_pressed = false;
+		this.d_pressed = false;
+	}
+
+	provide_handler(): Extension {
+		let self = this;
+		let domHand = EditorView.domEventHandlers({
+			keydown(event, view) {
+				if (event.key.includes("Alt")) self.alt_pressed = true
+				if (event.key == "d") self.d_pressed = true
+			},
+			keyup(event, view) {
+				if (event.key.includes("Alt")) self.alt_pressed = false
+				if (event.key == "d") self.d_pressed = false
+			}
+		});
+		return domHand;
+	}
+
+	provide_state(): StateField<readonly Tooltip []> {
+		let self = this;
+		return StateField.define<readonly Tooltip[]>({
+			create: emptyTooltip,
+		  
+			update(tooltips, tr) {
+				if (!self.d_pressed || !self.alt_pressed) 
+					return emptyTooltip(tr.state)
+				return getCursorTooltips(tr.state)
+			},
+		  
+			provide: f => showTooltip.computeN([f], state => state.field(f))
+			
+		  })
+	}
+	
+}
+
+/////////////////////
+
 export default class MyPlugin extends Plugin {
 	settings: MyPluginSettings;
+	cursorEvent: CursorEventHandlers;
 
 	async onload() {
 		// await this.loadSettings();
@@ -94,7 +210,15 @@ export default class MyPlugin extends Plugin {
 
 		// // When registering intervals, this function will automatically clear the interval when the plugin is disabled.
 		// this.registerInterval(window.setInterval(() => console.log('setInterval'), 5 * 60 * 1000));
-		this.registerEditorExtension(dummyKeymap());
+
+		let tooltip_config = tooltips({position: "absolute"})
+
+		this.cursorEvent = new CursorEventHandlers;
+
+		this.registerEditorExtension([dummyKeymap(), cursorTooltipBaseTheme, tooltip_config, this.cursorEvent.provide_state(), 
+			this.cursorEvent.provide_handler()]);
+
+		this.registerEditorSuggest(new DummySuggest(app));
  
 	}
 
